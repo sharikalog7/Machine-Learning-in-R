@@ -1,0 +1,795 @@
+---
+title: "Part2_Regression_Model"
+author: "Sharika Loganathan"
+date: "2022-12-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load packages
+
+```{r, load_packages}
+library(tidyverse)
+library(bayesplot)
+library(rstanarm)
+library(coefplot)
+library(splines)
+
+
+```
+
+## Read data
+
+
+```{r, read_glimpse_data}
+df <- readr::read_csv("fall2022_finalproject.csv", col_names = TRUE)
+```
+
+```{r}
+head(df)
+```
+```{r}
+df %>% glimpse()
+```
+
+You are required as part of the project to explore the data. Your exploration will demonstrate that `output`, the continuous response, is between 0 and 1. Because of this, it is **highly recommended** that you transform the continuous response before training regression models. You should use the logit transformation to convert the lower and upper bounded `output` variable to an unbounded variable. The regression models should be trained to predict the logit-transformed response. The code chunk below shows how to calculate the unbounded response, `y`, as the logit transformation of the `output` variable.  
+
+```{r}
+df_reg <- df %>% 
+  
+  mutate(
+    x5 = 1 - (x1 + x2 + x3 + x4),
+         w = x2 / (x3 + x4),
+         z = (x1 + x2) / (x5 + x4),
+         t = v1 * v2,
+         y = boot::logit(output)
+    ) %>% 
+  select(x1,x2,x3,x4,v1,v2,v3,v4,v4,v5,x5,w,z,t,m,y) %>% 
+  glimpse()
+```
+
+
+## Models using the “base feature”
+
+### All linear additive features
+
+```{r}
+mod_01 <- lm(y ~ x1+x2+x3+x4+v1+v2+v3+v4+v5+m , data = df_reg)
+broom::glance(mod_01)
+coefplot::coefplot(mod_01)
+```
+
+
+###  Interaction of the categorical input with all continuous inputs
+
+
+```{r}
+mod_02 <- lm(y ~ m *(x1 + x2 + x3 + x4+v1+v2+v3+v4+v5) , data = df_reg)
+broom::glance(mod_02)
+coefplot::coefplot(mod_02)
+```
+
+
+
+###   All pair-wise interactions of the continuous inputs
+
+```{r}
+mod_03 <- lm( y ~ (x1 + x2 + x3 + x4+v1+v2+v3+v4+v5)^2, data = df_reg)
+broom::glance(mod_03)
+coefplot::coefplot(mod_03)
+```
+
+
+
+
+
+##  Models using the “expanded feature”/ Derived  feature
+
+### Linear additive features
+
+
+```{r}
+mod_04 <- lm( y ~ (x5+w+t+z+m), data = df_reg)
+broom::glance(mod_04)
+coefplot::coefplot(mod_04)
+```
+
+###   Interaction of the categorical input with continuous features
+
+```{r}
+mod_05 <- lm( y ~ m*(x5+w+t+z), data = df_reg)
+broom::glance(mod_05)
+coefplot::coefplot(mod_05)
+```
+
+###   Pair-wise interactions between the continuous features
+
+
+
+```{r}
+mod_06 <- lm( y ~ m*(x5+w+t+z)^2, data = df_reg)
+broom::glance(mod_06)
+coefplot::coefplot(mod_06)
+```
+
+
+
+##    Models linear basis function models
+
+
+###  All linear additive features
+
+```{r}
+mod_07 <- lm(y~ (.+splines::ns(x1,df=3) +splines::ns(x5,df=3) +splines::ns(z,df=3) -x1 -x5 -z), data=df_reg)
+broom::glance(mod_07)
+coefplot::coefplot(mod_07)
+```
+
+
+###   Interaction of the categorical input with all continuous inputs
+
+Combining chemistry inputs with manufacturing processing units and process
+
+```{r}
+
+mod_08 <- lm(y~ (m)*(splines::ns(x5, 3)  + splines::ns(w, 3) + splines::ns(z, 3)), data=df_reg)
+broom::glance(mod_08)
+coefplot::coefplot(mod_08)
+```
+##
+
+```{r}
+
+
+mod_09<- lm(y~ m+ (splines::ns(x1, 3) * splines::ns(x3, 3) * splines::ns(x5, 2)),data=df_reg)
+broom::glance(mod_09)
+coefplot::coefplot(mod_09)
+```
+
+
+```{r}
+mod_10<- lm(y~ m*(splines::ns(x5, 3) * splines::ns(w, 3) * splines::ns(z, 3)),data=df_reg)
+broom::glance(mod_10)
+coefplot::coefplot(mod_10)
+```
+
+
+##  Train 10 different models
+
+##   Performance Metrics
+
+
+```{r}
+extract_metrics <- function(mod, mod_name)
+{
+  broom::glance(mod) %>% 
+    mutate(model_name = mod_name)
+}
+
+model_results <- purrr::map2_dfr(list(mod_01, mod_02, mod_03, mod_04,
+                                      mod_05, mod_06, mod_07, mod_08,mod_09,mod_10
+                                      ),
+                                 sprintf("mod-%02d", 1:10),
+                                 extract_metrics)
+
+```
+
+
+
+```{r}
+model_results %>% 
+  select(r.squared, model_name) %>% 
+  arrange(desc(r.squared))
+```
+
+
+Model 7 is the best model according to r-squared.
+
+
+
+
+
+```{r}
+model_results %>% 
+  ggplot(mapping = aes(x = model_name, y = r.squared)) +
+  geom_linerange(mapping = aes(ymin = 0,
+                               ymax = r.squared)) +
+  geom_point(size = 4.5) +
+  labs(x = '') +
+  theme_bw()
+```
+
+Which of the 9 models is the best
+
+mod 7 is the best .
+
+What performance metric did you use to make your selection?
+
+```{r}
+model_results %>% 
+  select(model_name, r.squared, AIC, BIC) %>% 
+  pivot_longer(!c("model_name")) %>% 
+  mutate(model_id = stringr::str_extract(model_name, "\\d+")) %>% 
+  ggplot(mapping = aes(x = model_id, y = value)) +
+  geom_point(size = 3.5) +
+  facet_wrap(~name, scales = "free_y") +
+  labs(x = '') +
+  theme_bw()
+```
+
+Model 7 is the best model.
+
+Visualize the coefficient summaries for your top 3 models.
+
+Mod_07 ,Mod_09, Mod_10 are the top 3 models.
+
+```{r}
+coefplot::multiplot(mod_07,mod_09,mod_10)
+```
+
+
+How do the coefficient summaries compare between the top 3 models?
+
+coefficient of mod 7 is more 
+
+
+```{r}
+mod_07 %>% readr::write_rds('mod_07.rds')
+mod_08 %>% readr::write_rds('mod_08.rds')
+mod_10 %>% readr::write_rds('mod_10.rds')
+```
+
+
+
+##   Regression– iiB) Bayesian Linear models
+
+
+
+
+```{r}
+re_load_mod_07 <- readr::read_rds('mod_07.rds')
+```
+
+
+
+
+
+
+stan_lm for base and derived inputs 
+
+```{r}
+set.seed(43212)
+bayes_mod01 <- stan_lm( y~ m+ (splines::ns(x1, 2) * splines::ns(x3, 2) * splines::ns(x5, 2)), data = df_reg,
+                 prior = rstanarm::R2(location = 0.5),
+                 seed = 432123)
+
+bayes_mod02 <- stan_lm( y ~ (.+splines::ns(x1,df=2) +splines::ns(x5,df=2) +splines::ns(z,df=2) -x1 -x5 -z), data = df_reg,
+                 prior = rstanarm::R2(location = 0.5),
+                 seed = 432123)
+
+
+bayes_mod03 <- stan_lm( y~ (.+splines::ns(x1,df=3) +splines::ns(x5,df=3) +splines::ns(z,df=3) -x1 -x5 -z), data = df_reg,
+                 prior = rstanarm::R2(location = 0.5),
+                 seed = 432123)
+
+
+```
+
+```{r}
+bayes_mod01 %>% summary()
+bayes_mod02 %>% summary()
+bayes_mod03 %>% summary()
+```
+
+```{r}
+posterior_interval(bayes_mod01)
+posterior_interval(bayes_mod02)
+posterior_interval(bayes_mod03)
+```
+
+```{r}
+rstanarm::bayes_R2(bayes_mod01) %>% quantile(c(0.05, 0.5, 0.95))
+```
+
+
+
+
+###   Posterior visualizations
+
+
+```{r}
+plot(bayes_mod01) + theme_bw()
+
+```
+
+
+
+
+```{r}
+plot(bayes_mod02) + theme_bw()
+```
+
+
+
+Alternatively, you may use rstanarm’s stan_lm() or stan_glm()
+function to fit full Bayesian linear models with syntax like R’s lm().
+
+
+```{r}
+plot(bayes_mod03) + theme_bw()
+```
+
+
+
+
+
+After fitting the 2 models, you must identify the best model. Which performance metric did you use to make your selection?
+
+
+```{r}
+all_models_rsq <-purrr::map2_dfr(list(bayes_mod01, bayes_mod02 ,bayes_mod03),
+                as.character(1:3),
+                function(mod, mod_name){tibble::tibble(rsquared = bayes_R2(mod)) %>% 
+                    mutate(model_name = mod_name)}) 
+all_models_rsq%>% 
+  ggplot(mapping = aes(x = rsquared)) +
+  geom_freqpoly(bins = 55,
+                 mapping = aes(color = model_name),
+                 size = 1.1) +
+  coord_cartesian(xlim = c(0, 1)) +
+  ggthemes::scale_color_colorblind("Model") +
+  theme_bw()
+```
+
+```{r}
+purrr::map2_dfr(list(bayes_mod01, bayes_mod02,bayes_mod03),
+                as.character(1:3),
+                function(mod, mod_name){as.data.frame(mod) %>% tibble::as_tibble() %>% 
+                    select(sigma) %>% 
+                    mutate(model_name = mod_name)}) %>% 
+  ggplot(mapping = aes(x = sigma)) +
+  geom_freqpoly(bins = 55,
+                 mapping = aes(color = model_name),
+                 size = 1.1) +
+  ggthemes::scale_color_colorblind("Model") +
+  theme_bw()
+```
+
+```{r}
+all_models_rsq %>%
+  ggplot(mapping = aes(x = model_name, y = rsquared, fill = model_name)) +
+  geom_boxplot(width = 0.3) + 
+  scale_fill_brewer(palette = "Set2") +
+  theme_bw() +
+  theme(aspect.ratio = 1)
+```
+
+
+Performance of both the models are almost same, so I choose model 1 as it’s performance is slightly better.
+
+
+
+Visualize the regression coefficient posterior summary statistics for your best model.
+
+
+##   Visualizing Posterior coefficient summary for the best model
+
+
+```{r}
+plot(bayes_mod01, pars = names(bayes_mod01$coefficients)) +
+  geom_vline(xintercept = 0, color = "grey", linetype = "dashed", size = 1.0) +
+  theme_bw()
+```
+
+
+
+
+
+
+##  Read Mod_07
+
+```{r}
+re_load_mod_07 <- readr::read_rds('mod_07.rds')
+```
+
+
+##   Regression – iiC) Linear models Predictions
+
+
+```{r}
+as.data.frame(bayes_mod03) %>% tibble::as_tibble() %>% 
+  ggplot(mapping = aes(x = sigma)) +
+  geom_histogram(bins = 55) +
+  theme_bw()
+```
+
+
+```{r}
+as.data.frame(bayes_mod03) %>% tibble::as_tibble() %>% 
+  ggplot(mapping = aes(x = sigma)) +
+  geom_histogram(bins = 55) +
+  geom_vline(xintercept = stats::sigma(re_load_mod_07), 
+             color = "red", linetype = "dashed", size = 1.1)
+```
+
+
+```{r}
+as.data.frame(bayes_mod01) %>% tibble::as_tibble() %>% 
+  select(sigma) %>% 
+  pull() %>% 
+  quantile(c(0.05, 0.5, 0.95))
+```
+
+
+```{r}
+bayes_mod01 %>% readr::write_rds('bayes_mod01.rds')
+bayes_mod02 %>% readr::write_rds('bayes_mod02.rds')
+bayes_mod03 %>% readr::write_rds('bayes_mod03.rds')
+```
+
+
+
+
+For your best model: Study the posterior uncertainty in the noise (residual error), 𝜎. How does the lm() maximum likelihood estimate (MLE) on 𝜎 relate to the posterior uncertainty on 𝜎?
+• Do you feel the posterior is precise or are we quite uncertain about 𝜎?
+
+
+###  Testing
+
+```{r}
+bayes_mod01 <- readr::read_rds('bayes_mod01.rds')
+bayes_mod02 <- readr::read_rds('bayes_mod02.rds')
+bayes_mod03 <- readr::read_rds('bayes_mod03.rds')
+```
+
+
+
+
+###  Holdout set Prediction
+
+```{r}
+holdout <- readr::read_csv('fall2022_holdout_inputs.csv', col_names = TRUE)
+```
+
+```{r}
+df_holdout <- holdout %>% 
+  mutate(x5 = 1 - (x1 + x2 + x3 + x4),
+         w = x2 / (x3 + x4),
+         z = (x1 + x2) / (x5 + x4),
+         t = v1 * v2) %>% 
+         select(x1,x2,x3,x4,v1,v2,v3,v4,v4,v5,x5,w,z,t,m) %>%
+  glimpse()
+```
+
+```{r}
+df_test_reg <- df_reg %>% 
+  select(x1,x2,x3,x4,v1,v2,v3,v4,v5,x5,w,z,t,m) %>% 
+  glimpse()
+```
+
+
+```{r}
+sprintf("columns in df_all: %d vs columns in holdout: %d", ncol(df_test_reg), ncol(df_holdout))
+```
+
+
+```{r}
+df_holdout %>% names()
+```
+
+```{r}
+df_test_reg %>% names()
+```
+
+
+
+```{r}
+pred_01 <- posterior_predict(bayes_mod01,df_holdout) 
+
+```
+
+
+```{r}
+pred_02 <- posterior_predict(bayes_mod02, df_holdout) 
+```
+
+```{r}
+pred_03 <- posterior_predict(bayes_mod03, df_holdout) 
+```
+
+
+
+##  Regression – iiD) Train/tune with resampling
+
+Train, assess, tune, and compare more complex methods via resampling.
+
+
+Caret  to handle the preprocessing, training, testing, and evaluation.
+
+
+###   Resampling and performance metrics
+
+
+
+```{r}
+
+library(caret)
+
+my_ctrl <- trainControl(method = "repeatedcv", number = 5, repeats = 3)
+
+my_metric <- "RMSE"
+```
+
+
+##  Basic linear models
+
+```{r}
+set.seed(2021)
+
+fit_lm_1 <- train(y ~ x1 + x2 + x3 + x4+v1+v2+v3+v4+v5+m,
+                  data = df_reg,
+                  method = "lm",
+                  metric = my_metric,
+                  preProcess = c("center", "scale"),
+                  trControl = my_ctrl)
+
+fit_lm_1
+```
+
+
+```{r}
+set.seed(2021)
+
+fit_lm_2 <- train(y ~ x5+t+z+w,
+                  data = df_reg,
+                  method = "lm",
+                  metric = my_metric,
+                  preProcess = c("center", "scale"),
+                  trControl = my_ctrl)
+
+fit_lm_2
+```
+
+#   Regularized regression with elastic net
+
+##  Regression – iiD) Train/tune with resampling
+
+
+Train and tune the neural network, random forest, and the gradient boosted tree with the “base feature” set AND AGAIN with the “expanded feature” set.
+
+Regularized regression with Elastic net
+• Interact the categorical variable with all pair-wise interactions of the continuous features.
+• The more complex of the 2 models selected from iiA)
+
+
+```{r}
+set.seed(2021)
+
+fit_enet_1 <- train(y ~ (x5+z+t+w)^2 +I(x5^2) + I(z^3),
+                    data = df_reg,
+                    method = "glmnet",
+                    metric = my_metric,
+                    preProcess = c("center", "scale"),
+                    trControl = my_ctrl)
+
+fit_enet_1
+```
+
+Elastic net with all pair-wise interactions between all 5 inputs and polynomial features for log_f.
+
+
+```{r}
+set.seed(2021)
+
+fit_enet_3 <- train(y ~ m*( x5 + z + t+w)^2 + I(x5^2) + I(z^3),
+                    data = df_reg,
+                    method = "glmnet",
+                    metric = my_metric,
+                    preProcess = c("center", "scale"),
+                    trControl = my_ctrl)
+
+fit_enet_3
+```
+
+Neural network – once with “base feature” set & once with “expanded feature” set
+
+##Neural network
+
+
+```{r}
+set.seed(2021)
+
+fit_nnet_1 <- train(y ~ m*(x5+t+z+w),
+                    data = df_reg,
+                    method = "nnet",
+                    metric = my_metric,
+                    preProcess = c("center", "scale"),
+                    trControl = my_ctrl,
+                    trace = FALSE,
+                    linout = TRUE)
+```
+
+```{r}
+fit_nnet_1
+```
+
+
+Let’s try to tune the neural network to see if performance can be improved.
+
+```{r}
+nnet_grid <- expand.grid(size = c(2, 4, 6, 8, 10, 12),
+                         decay = exp(seq(-6, 2, length.out = 13)))
+
+set.seed(2021)
+
+fit_nnet_2 <- train(y ~ m*(x5+t+w+z),
+                    data = df_reg,
+                    method = "nnet",
+                    metric = my_metric,
+                    tuneGrid = nnet_grid,
+                    preProcess = c("center", "scale"),
+                    trControl = my_ctrl,
+                    trace = FALSE,
+                    linout = TRUE)
+```
+
+
+Visualize the tuning results.
+
+```{r}
+plot(fit_nnet_2, xTrans = log)
+```
+
+
+```{r}
+fit_nnet_2$bestTune
+```
+
+
+Random forest – once with “base feature” set & once with “expanded feature” set
+
+
+#Random forest
+
+```{r}
+set.seed(2021)
+
+fit_rf <- train(y ~ m*(x5+t+w+z),
+                data = df_reg,
+                method = "rf",
+                metric = my_metric,
+                trControl = my_ctrl,
+                importance = TRUE)
+
+fit_rf
+```
+
+
+
+Gradient boosted tree – once with “base feature” set & once with “expanded feature” set
+
+##Gradient boosted tree
+####There are multiple implementations of gradient boosted trees. We will use XGBoost.
+
+```{r}
+set.seed(2021)
+
+fit_xgb <- train(y ~ m*(x5+w+t+z),
+                 data = df_reg,
+                 method = "xgbTree",
+                 metric = my_metric,
+                 trControl = my_ctrl,
+                 objective = 'reg:squarederror')
+
+fit_xgb$bestTune
+```
+
+
+```{r}
+plot(fit_xgb)
+```
+Tuning
+
+```{r}
+xgb_grid <- expand.grid(nrounds = seq(100, 700, by = 100),
+                        max_depth = c(3, 4, 5),
+                        eta = c(0.5*fit_xgb$bestTune$eta, fit_xgb$bestTune$eta),
+                        gamma = fit_xgb$bestTune$gamma,
+                        colsample_bytree = fit_xgb$bestTune$colsample_bytree,
+                        min_child_weight = fit_xgb$bestTune$min_child_weight,
+                        subsample = fit_xgb$bestTune$subsample)
+
+set.seed(2021)
+
+fit_xgb_tune <- train(y ~ m*(x5+w+t+z),
+                      data = df_reg,
+                      method = "xgbTree",
+                      tuneGrid = xgb_grid,
+                      metric = my_metric,
+                      trControl = my_ctrl,
+                      objective = 'reg:squarederror')
+```
+
+
+```{r}
+plot(fit_xgb_tune)
+```
+
+
+##   Compare models
+##   Compile the resampling results together.
+
+
+```{r}
+my_results <- resamples(list(LM_1 = fit_lm_1,
+                             LM_2 = fit_lm_2,
+                             ENET_1 = fit_enet_1,
+                             
+                             ENET_3 = fit_enet_3,
+                        
+                             NNET = fit_nnet_1,
+                             NNET_2 = fit_nnet_2,
+                          
+                           
+                             RF = fit_rf,
+                             XGB = fit_xgb_tune))
+```
+
+
+```{r}
+#Compare models based on RMSE.
+
+dotplot(my_results, metric = "RMSE")
+```
+
+
+```{r}
+#Compare the models based on R-squared.
+
+dotplot(my_results, metric = "Rsquared")
+```
+
+Which inputs seem important?
+
+###   Variable importances
+
+```{r}
+plot(varImp(fit_rf))
+```
+
+
+```{r}
+plot(varImp(fit_xgb_tune))
+```
+
+
+
+
+
+
+
+Decide the resampling scheme, what kind of pre processing options you should consider, and the performance metric you will focus on.
+
+
+
+
+Identifying the best model.
+
+
+XGboost is the best model.
+
+
+z,x5,w, t are the most important features.
+
+
+```{r}
+fit_xgb %>% readr::write_rds('reg_best_model.rds')
+
+```
+
+
+
+

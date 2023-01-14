@@ -1,0 +1,97 @@
+---
+title: "Part5_Holdout_Prediction"
+author: "Sharika Loganathan"
+date: "2022-12-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+
+## Load packages
+
+
+```{r}
+library(tidyverse)
+library(caret)
+```
+
+
+##  Holdout set
+
+```{r}
+holdout <- readr::read_csv('fall2022_holdout_inputs.csv', col_names = TRUE)
+```
+
+```{r}
+df_holdout <- holdout %>% 
+  mutate(x5 = 1 - (x1 + x2 + x3 + x4),
+         w = x2 / (x3 + x4),
+         z = (x1 + x2) / (x5 + x4),
+         t = v1 * v2) %>% 
+         select(x1,x2,x3,x4,v1,v2,v3,v4,v4,v5,x5,w,z,t,m) %>%
+  glimpse()
+```
+
+
+###  Load Best Models
+
+
+```{r}
+reg_best_model <- readr::read_rds('reg_best_model.rds')
+cls_best_model <- readr::read_rds('cls_best_model.rds')
+```
+
+
+
+
+###   Important Varibles for Regression Model
+
+
+
+```{r}
+plot(varImp(reg_best_model), top=20)
+```
+
+ *Top variables for regression are z,w ,x5
+ 
+ 
+ 
+###   Important Varibles for Classification Model
+
+
+```{r}
+plot(varImp(cls_best_model), top = 20)
+```
+
+
+*Top variables for regression are x1,x2,x3
+
+
+
+```{r}
+y <- list(predict(reg_best_model, df_holdout))
+outcome <- list(predict(cls_best_model, df_holdout))
+probability <- predict(cls_best_model, df_holdout, type = 'prob')%>% select(event)
+my_pred <-bind_cols(list(y, outcome, probability)) %>% tibble::rowid_to_column('id')
+```
+
+
+```{r}
+colnames(my_pred) <- c("id", "y", "outcome", "probability")
+my_pred %>% head()
+```
+
+```{r}
+my_pred %>% 
+  readr::write_csv('pred.csv', col_names = TRUE)
+```
+

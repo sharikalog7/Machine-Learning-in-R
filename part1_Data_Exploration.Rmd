@@ -1,0 +1,408 @@
+---
+title: "Part_1_Data_Exploration"
+author: "Sharika Loganathan"
+date: "2022-12-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load packages
+
+This example uses the `tidyverse` suite of packages.  
+
+```{r, load_tidyverse}
+library(tidyverse)
+library(visdat)
+library(ggbeeswarm)
+library(psych)
+```
+
+## Read data
+
+Please download the final project data from Canvas. If this Rmarkdown file is located in the same directory as the downloaded CSV file, it will be able to load in the data for you. It is **highly** recommended that you use an RStudio RProject to more easily manage the working directory and file paths of the code and objects associated with the final project.  
+
+The code chunk below reads in the final project data.  
+
+```{r, read_final_data}
+df <- readr::read_csv("fall2022_finalproject.csv", col_names = TRUE)
+```
+
+The `readr::read_csv()` function displays the data types and column names associated with the data. However, a glimpse is shown below that reveals the number of rows and also shows some of the representative values for the columns.  
+
+```{r, show_data_glimpse}
+df %>% glimpse()
+```
+
+### Logit transformation of the `output` variable.  
+
+
+```{r}
+df_reg<- df%>% 
+  mutate(y = boot::logit(output)) %>% 
+  select(x1:x4,v1:v5,m,y)%>%
+  glimpse()
+```
+
+
+### Binary classfication Data 
+
+```{r, show_binary_outcome}
+df_classify<-df %>% 
+  
+  mutate(outcome = ifelse(output < 0.33, 'event', 'non_event'),
+         outcome = factor(outcome, levels = c("event", "non_event"))) %>% 
+         select(x1:x4,v1:v5,m,outcome)%>%
+        
+  glimpse()
+```
+
+
+### Derived features Dataset Regression
+
+```{r}
+df_derived_reg<-df %>% 
+  mutate(x5 = 1 - (x1 + x2 + x3 + x4),
+         w = x2 / (x3 + x4),
+         z = (x1 + x2) / (x5 + x4),
+         t = v1 * v2,
+         y = boot::logit(output)) %>% 
+         select(m,x5,t,w,z,y)%>%
+        
+  glimpse()
+```
+
+### Derived features Dataset Classification
+
+```{r}
+df_derived_classify<-df %>% 
+  
+  mutate(x5 = 1 - (x1 + x2 + x3 + x4),
+         w = x2 / (x3 + x4),
+         z = (x1 + x2) / (x5 + x4),
+         t = v1 * v2,
+         outcome = ifelse(output < 0.33, 'event', 'non_event'),
+         outcome = factor(outcome, levels = c("event", "non_event"))) %>% 
+         select(x5,w,z,t,m,outcome)%>%
+        
+  glimpse()
+```
+
+
+
+### Attributes of the Data set 
+
+```{r}
+names(df)
+```
+
+
+### The first five rows of the Data set
+
+```{r}
+df[1:5,]
+```
+
+
+The data have continuous inputs and a categorical input. The continuous inputs consist of two groups of variables, the "x-variables", `x1` through `x4`, and the "v-variables", `v1` through `v5`. The categorical input is `m`. The response is continuous and is named `output`.  
+
+### Checking Missing Values
+
+```{r}
+visdat::vis_miss(df)
+```
+
+No Missing values present in the Data set
+
+
+### Check the data types visually.
+
+```{r}
+visdat::vis_dat(df)
+```
+
+There is only one Categorical Column and rest are Continuous.
+
+### Check the number of unique values per variable.
+
+
+```{r}
+df %>% purrr::map_dbl(n_distinct)
+```
+
+
+One of the variables have relatively few unique values! Checking the counts associated with each unique value for m.
+
+```{r}
+df %>% count(m)
+```
+
+### Graphically display counts with bar charts of the Categorical input . The m bar chart is below.
+
+```{r}
+ggplot(df, aes(x=as.factor(m))) +
+  geom_bar(color="black", fill="gold")+
+  scale_y_continuous(expand=c(0.1,0.1)) +
+  geom_text(stat='count',aes(label = ..count..), vjust = -1)
+  
+```
+
+M values are uniform. 
+
+
+
+### Check the number of unique combinations of all inputs.
+
+```{r}
+df %>% 
+  select(-output) %>% 
+  distinct() %>% 
+  dim()
+```
+
+No Duplicate Rows as there are 1252 rows of Data in the Data set 
+
+### Classfication_Data Exploration
+
+
+### Bar plot of Classification Outcome
+
+```{r}
+ggplot(df_classify, aes(x=as.factor(outcome))) +
+  geom_bar(color="black", fill="blue")+
+  scale_y_continuous(expand=c(0.1,0.1)) +
+  geom_text(stat='count',aes(label = ..count..), vjust = -1)
+```
+
+
+
+### Bar plot of Classification Outcome with input categorical value m.
+
+```{r}
+df_classify%>%
+  ggplot(mapping = aes(x = m, fill = outcome, label = ..count..))+
+  geom_bar(width = 0.5)+
+  stat_count(geom = "text", colour = "black", size = 3.5, ,position=position_stack(vjust=0.5))+
+  theme_bw()+
+  scale_fill_brewer(palette="Accent")
+```
+
+
+###  Check how the outcome is related to the m
+
+
+
+```{r}
+df_classify %>% select("outcome","m") %>%
+  ggplot(aes(x=m)) +
+  geom_bar(aes(fill=outcome),position="fill") +
+  facet_wrap(~m)
+```
+
+
+
+Given data is imbalanced. Number of events are fairly less than the number of non events
+Output values are dominant.
+Non event is more compared to event 
+
+
+###   Visualize the combinations as a heatmap.
+
+```{r}
+df_classify %>% 
+  count(m, outcome) %>% 
+  ggplot(mapping = aes(x = as.factor(m), y = as.factor(outcome))) +
+  geom_tile(mapping = aes(fill = n), color = 'black') +
+  geom_text(mapping = aes(label = n,
+                          color = n > median(n)),
+            size = 7) +
+  scale_fill_viridis_c(guide = 'none', option = 'magma') +
+  scale_color_manual(guide = 'none',
+                     values = c("TRUE" = 'black',
+                                "FALSE" = 'white')) +
+  theme_bw()
+```
+
+
+Non event is more compared to event for the input value m with respect to Outcome.
+
+###   Continuous Input Values EDA
+
+
+Correlation between continuous output w.r.t continuous inputs
+
+```{r}
+df_reg %>% select(x1,x2,x3,x4,v1,v2,v3,v4,v5 ,y) %>% cor() %>% corrplot::corrplot(type = 'upper')
+```
+
+
+###  Input Disturbutions
+
+```{r}
+input_names <- c("x1", "x2", "x3", "x4", "v1","v2","v3","v5")
+
+df_reg %>% 
+  select(all_of(input_names)) %>% 
+  tibble::rowid_to_column() %>% 
+  pivot_longer(!c("rowid")) %>% 
+  ggplot(mapping = aes(x = value)) +
+  geom_histogram(bins = 35) +
+  facet_wrap(~name, scales = "free") +
+  theme_bw() +
+  theme(axis.text.y = element_blank())
+```
+
+```{r}
+df_reg %>% 
+  select(-v1,-v2,-v3,-v4,-v5) %>% 
+  GGally::ggpairs(progress = FALSE,
+                  diag = list(continuous = GGally::wrap('barDiag', bins=25))) +
+  theme_bw()
+```
+
+```{r}
+df_reg %>% 
+  select(-x1,-x2,-x3,x4) %>% 
+  GGally::ggpairs(progress = FALSE,
+                  diag = list(continuous = GGally::wrap('barDiag', bins=25))) +
+  theme_bw()
+```
+
+```{r}
+df_reg %>% 
+  select(x1,x2,x3,x4,v1,v2,v3,v4,v5) %>% 
+  cor() %>% 
+  corrplot::corrplot(method = 'number', type = 'upper',order="hclust")
+```
+
+###   Derived input correlation 
+
+```{r}
+df_derived_reg %>% 
+  select(x5,t,w,z) %>% 
+  cor() %>% 
+  corrplot::corrplot(method = 'number', type = 'upper',order="hclust")
+```
+```{r}
+#create pairs plot
+pairs.panels(df_derived_reg)
+pairs.panels(df_derived_classify)
+```
+
+###  Categorical with Continous Inputs with x inputs
+
+
+```{r}
+df_reg  %>%
+  pivot_longer(starts_with("x")) %>%
+  ggplot(aes(x=value)) +
+    geom_density(aes(color=m), bins=50) +
+    facet_wrap(~name, scales="free", ncol=8) +
+    ylab("") + xlab("")
+```
+
+All x values have a smiliar trend with respect to m.
+
+###  Categorical with Continous Inputs with v variables
+
+
+```{r}
+df_reg  %>%
+    pivot_longer(starts_with("v")) %>%
+    ggplot(aes(x=value)) +
+    geom_density(aes(color=m), bins=50) +
+    facet_wrap(~name, scales="free", ncol=8) +
+    ylab("") + xlab("")
+```
+
+All v values have a smiliar trend with respect to m.
+
+
+
+##   Output Visualization with Logit Transformation.
+
+
+```{r}
+df%>% select(output) %>%
+  ggplot() +
+    geom_histogram(aes(x=output), bins=50)
+```
+
+After logit Transformation of y
+
+```{r}
+df_reg%>% select(y) %>%
+  ggplot() +
+    geom_histogram(aes(x=y), bins=50)
+```
+
+### Additional Scatter plot Visualization for the input features.
+
+```{r}
+ggplot(df, aes(x = x1, y = output)) + 
+  geom_point() + 
+  geom_smooth()
+```
+
+```{r}
+ggplot(df_reg, aes(x = x1, y = y)) + 
+  geom_point() + 
+  geom_smooth()
+
+ggplot(df_reg, aes(x = x2, y = y)) + 
+  geom_point() + 
+  geom_smooth()
+
+ggplot(df_reg, aes(x = x3, y = y)) + 
+  geom_point() + 
+  geom_smooth()
+
+ggplot(df_reg, aes(x = x4, y = y)) + 
+  geom_point() + 
+  geom_smooth()
+
+ggplot(df_reg, aes(x = v1, y = y)) + 
+  geom_point() + 
+  geom_smooth()
+
+ggplot(df_reg, aes(x = v2, y = y)) + 
+  geom_point() + 
+  geom_smooth()
+
+
+ggplot(df_reg, aes(x = v3, y = y)) + 
+  geom_point() + 
+  geom_smooth()
+
+
+ggplot(df_reg, aes(x = v4, y = y)) + 
+  geom_point() + 
+  geom_smooth()
+
+ggplot(df_reg, aes(x = v5, y = y)) + 
+  geom_point() + 
+  geom_smooth(method = "lm", se = FALSE, colour = "red")
+
+
+```
+
+
+```{r}
+ggplot(df_reg, aes(x = x2, y = y, colour = m)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  geom_smooth(
+    aes(x = x2, y = y),
+    method = "lm", se = FALSE, inherit.aes = FALSE,
+    colour = "black", size = 1, linetype = "dashed"
+  )
+```
+
+
+
+
+
+
+

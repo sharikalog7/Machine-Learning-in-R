@@ -1,0 +1,719 @@
+---
+title: "Part3_Classfication_Model"
+author: "Sharika Loganathan"
+date: "2022-12-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+## Load packages
+
+
+```{r}
+library(tidyverse)
+library(rstanarm)
+library(coefplot)
+library(bayesplot)
+library(caret)
+library(splines)
+```
+
+
+
+## Read data
+
+
+```{r}
+df <- readr::read_csv("fall2022_finalproject.csv", col_names = TRUE)
+```
+
+
+```{r}
+
+df %>% glimpse()
+```
+
+
+```{r}
+df_classify <- df %>% 
+  
+  mutate(
+    x5 = 1 - (x1 + x2 + x3 + x4),
+         w = x2 / (x3 + x4),
+         z = (x1 + x2) / (x5 + x4),
+         t = v1 * v2,
+        
+         outcome = ifelse(output < 0.33, 'event', 'non_event'),
+         outcome = factor(outcome, levels = c("event", "non_event")),
+         y = ifelse(outcome == 'event', 1, 0) )%>%
+
+  select(x1,x2,x3,x4,v1,v2,v3,v4,v4,v5,x5,w,z,t,m,y) %>% 
+  glimpse()
+```
+
+
+##  Classification – iiiA) GLM
+
+3 Models using the “base feature” set:
+• All linear additive features
+• Interaction of the categorical input with all continuous inputs
+• All pair-wise interactions of the continuous inputs
+
+
+
+###  All linear additive features
+
+
+```{r}
+
+mod_01 <- glm( y ~ x1+x2+x3+x4+v1+v2+v3+v4+v5+m ,data=df_classify,family = "binomial")
+mod_01 %>% summary()
+broom::glance(mod_01)
+coefplot::coefplot(mod_01)
+```
+
+###   Interaction of the categorical input with all continuous inputs
+
+```{r}
+mod_02 <- glm( y ~ m *(x1+x2+x3+x4+v1+v2+v3+v4+v5), data = df_classify , family = "binomial")
+mod_02 %>% summary()
+broom::glance(mod_02)
+coefplot::coefplot(mod_02)
+```
+###  All pair-wise interactions of the continuous inputs
+
+```{r}
+mod_03 <- glm (y ~ (x1+x2+x3+x4+v1+v2+v3+v4+v5)^2, data = df_classify , family="binomial")
+mod_03 %>% summary()
+broom::glance(mod_03)
+coefplot::coefplot(mod_03)
+```
+
+
+###  Interaction of m with continuous inputs of the derived features.
+
+
+```{r}
+mod_04 <- glm(y ~ (x5+w+t+z), data = df_classify, family="binomial")
+mod_04 %>% summary()
+broom::glance(mod_04)
+coefplot::coefplot(mod_04)
+```
+
+
+
+###   Interaction of the categorical input with continuous features
+
+```{r}
+mod_05 <- glm(y ~ m*(x5+w+t+z), data = df_classify ,family="binomial")
+mod_05 %>% summary()
+broom::glance(mod_05)
+coefplot::coefplot(mod_05)
+```
+
+
+###   Pair-wise interactions between the continuous features 
+
+
+
+```{r}
+mod_06 <- glm(y ~ (x5+w+t+z)^2, data = df_classify)
+mod_06 %>% summary()
+broom::glance(mod_06)
+coefplot::coefplot(mod_06)
+```
+
+
+###  Model with natural spline on continuous variables
+
+
+
+```{r}
+mod_07 <- glm(y ~ ns(x1, 2)+ns(x2, 2)+ ns(x3,2) + ns(x4,2)+ns(v1,2)+ns(v2,2)+ns(v3,2)+ns(v4,2)+ns(v5,2), data = df_classify)
+mod_07 %>% summary()
+broom::glance(mod_07)
+coefplot::coefplot(mod_07)
+```
+
+
+###  Model with natural spline on derived features continuous variables
+
+```{r}
+mod_08 <- glm(y~ ns(z, 2)+ns(w, 2)+ ns(x5,2) + +ns(v1,2)+ns(v3,2)+ns(v4,2), data = df_classify)
+mod_08 %>% summary()
+broom::glance(mod_08)
+coefplot::coefplot(mod_08)
+```
+
+
+
+###  Model with natural spline and interaction of base variables and derived features and sum of categorical variables
+
+
+
+```{r}
+mod_09 <- glm(y~ (ns(z, 2) * ns(x5, 2) * ns(x2, 2) * ns(x3, 2) + m), data = df_classify)
+mod_09 %>% summary()
+broom::glance(mod_09)
+coefplot::coefplot(mod_09)
+```
+
+
+```{r}
+perf_metrics <- function(mod, mod_name)
+{
+  broom::glance(mod) %>% 
+    mutate(model_name = mod_name, rmse = sqrt(mean(mod$residuals^2)))
+}
+```
+
+
+```{r}
+model_results <- purrr::map2_dfr(list(mod_01,mod_02, mod_03, mod_04,mod_05,mod_06,mod_07,
+                                      mod_08,mod_09),
+                                 sprintf("mod%02d", 1:9),
+                                 perf_metrics)
+
+model_results %>%
+  select(model_name, AIC, BIC, rmse)
+```
+```{r}
+model_results %>% 
+  select(model_name, AIC, BIC, rmse) %>% 
+  pivot_longer(!c("model_name")) %>% 
+  ggplot(mapping = aes(x = model_name, y = value)) +
+  geom_point(color = 'blue') +
+  facet_wrap(~name, scales = "free_y") +
+  theme_bw()
+```
+
+
+```{r}
+coefplot(mod_07)
+coefplot(mod_08)
+coefplot(mod_09)
+```
+
+
+```{r}
+mod_06 %>% readr::write_rds('mod_07.rds')
+mod_07 %>% readr::write_rds('mod_08.rds')
+mod_08 %>% readr::write_rds('mod_09.rds')
+```
+
+
+##
+
+```{r}
+mod_06 <- readr::read_rds('mod_07.rds')
+mod_07 <- readr::read_rds('mod_08.rds')
+mod_08 <- readr::read_rds('mod_09.rds')
+```
+
+
+
+```{r}
+set.seed(43212)
+bin_bayes_mod01 <- stan_glm( y ~ m *((x1+x2+x3+x4)+(v1+v2+v3+v4+v5))   , data = df_classify,
+                 family = gaussian(),
+                 prior = default_prior_coef(family))
+```
+
+```{r}
+plot(bin_bayes_mod01) + theme_bw()
+```
+
+
+```{r}
+set.seed(43212)
+bin_bayes_mod02 <- stan_glm( y ~ m*(x5+w+z+t), data = df_classify,family = gaussian(),
+                 prior = default_prior_coef(family))
+```
+
+
+```{r}
+plot(bin_bayes_mod02) + theme_bw()
+```
+
+
+
+```{r}
+all_models_rsq <-purrr::map2_dfr(list(bin_bayes_mod01, bin_bayes_mod02 ),
+                as.character(1:2),
+                function(mod, mod_name){tibble::tibble(rsquared = bayes_R2(mod)) %>% 
+                    mutate(model_name = mod_name)}) 
+all_models_rsq%>% 
+  ggplot(mapping = aes(x = rsquared)) +
+  geom_freqpoly(bins = 55,
+                 mapping = aes(color = model_name),
+                 size = 1.1) +
+  coord_cartesian(xlim = c(0, 1)) +
+  ggthemes::scale_color_colorblind("Model") +
+  theme_bw()
+
+```
+
+```{r}
+purrr::map2_dfr(list(bin_bayes_mod01, bin_bayes_mod02),
+                as.character(1:2),
+                function(mod, mod_name){as.data.frame(mod) %>% tibble::as_tibble() %>% 
+                    select(sigma) %>% 
+                    mutate(model_name = mod_name)}) %>% 
+  ggplot(mapping = aes(x = sigma)) +
+  geom_freqpoly(bins = 55,
+                 mapping = aes(color = model_name),
+                 size = 1.1) +
+  ggthemes::scale_color_colorblind("Model") +
+  theme_bw()
+```
+
+
+```{r}
+all_models_rsq %>%
+  ggplot(mapping = aes(x = model_name, y = rsquared, fill = model_name)) +
+  geom_boxplot(width = 0.3) + 
+  scale_fill_brewer(palette = "Set2") +
+  theme_bw() +
+  theme(aspect.ratio = 1)
+```
+
+
+```{r}
+plot(bin_bayes_mod01, pars = names(bin_bayes_mod01$coefficients)) +
+  geom_vline(xintercept = 0, color = "grey", linetype = "dashed", size = 1.0) +
+  theme_bw()
+```
+
+```{r}
+bin_bayes_mod01 %>% readr::write_rds('bin_bayes_mod01.rds')
+bin_bayes_mod02 %>% readr::write_rds('bin_bayes_mod02.rds')
+```
+
+
+
+```{r}
+bin_bayes_mod01 <- readr::read_rds('bin_bayes_mod01.rds')
+bin_bayes_mod02 <- readr::read_rds('bin_bayes_mod02.rds')
+```
+
+```{r}
+holdout <- readr::read_csv('fall2022_holdout_inputs.csv', col_names = TRUE)
+```
+
+```{r}
+df_holdout <- holdout %>% 
+  mutate(x5 = 1 - (x1 + x2 + x3 + x4),
+         w = x2 / (x3 + x4),
+         z = (x1 + x2) / (x5 + x4),
+         t = v1 * v2) %>% 
+         select(x1,x2,x3,x4,v1,v2,v3,v4,v4,v5,x5,w,z,t,m) %>%
+  glimpse()
+```
+
+```{r}
+df_test_classify <- df_classify %>% 
+  select(x1,x2,x3,x4,v1,v2,v3,v4,v5,x5,w,z,t,m) %>% 
+  glimpse()
+```
+
+```{r}
+sprintf("columns in df_all: %d vs columns in holdout: %d", ncol(df_test_classify), ncol(df_holdout))
+```
+
+```{r}
+pred_01 <- posterior_predict(bin_bayes_mod01, df_holdout) 
+
+```
+
+```{r}
+pred_02 <- posterior_predict(bin_bayes_mod02, df_holdout) 
+```
+
+
+```{r}
+posterior_predict(bin_bayes_mod01, newdata = holdout) %>% 
+  as.data.frame() %>% tibble::as_tibble() %>% 
+  tibble::rowid_to_column("post_id") %>% 
+  pivot_longer(!c("post_id"), names_to = 'pred_id') %>% 
+  mutate(across(.cols = 'pred_id', .fns = as.numeric)) %>% 
+  group_by(pred_id) %>% 
+  summarise(num_post = n(),
+            y_avg = mean(value),
+            y_lwr = quantile(value, 0.05),
+            y_upr = quantile(value, 0.95)) %>% 
+  ungroup() %>% 
+  left_join(holdout %>% tibble::rowid_to_column("pred_id"),
+            by = "pred_id") 
+```
+
+```{r}
+posterior_predict(bin_bayes_mod02, newdata = df_holdout) %>% 
+  as.data.frame() %>% tibble::as_tibble() %>% 
+  tibble::rowid_to_column("post_id") %>% 
+  pivot_longer(!c("post_id"), names_to = 'pred_id') %>% 
+  mutate(across(.cols = 'pred_id', .fns = as.numeric)) %>% 
+  group_by(pred_id) %>% 
+  summarise(num_post = n(),
+            y_avg = mean(value),
+            y_lwr = quantile(value, 0.05),
+            y_upr = quantile(value, 0.95)) %>% 
+  ungroup() %>% 
+  left_join(holdout %>% tibble::rowid_to_column("pred_id"),
+            by = "pred_id")
+```
+
+
+
+
+##   Classification – iiiD) Train/tune with resampling
+
+Train, assess, tune, and compare more complex methods via resampling.
+• You may use either caret or tidymodels to handle the preprocessing, training, testing, and evaluation.
+
+
+```{r}
+df_classify_bin <- df %>% 
+  
+  mutate(
+    x5 = 1 - (x1 + x2 + x3 + x4),
+         w = x2 / (x3 + x4),
+         z = (x1 + x2) / (x5 + x4),
+         t = v1 * v2,
+        
+         outcome = ifelse(output < 0.33, 'event', 'non_event'),
+         outcome = factor(outcome, levels = c("event", "non_event")),
+         y = ifelse(outcome == 'event', 1, 0) )%>%
+
+  select(x1,x2,x3,x4,v1,v2,v3,v4,v4,v5,x5,w,z,t,m,outcome) %>% 
+  glimpse()
+```
+
+
+###   Resampling scheme
+
+```{r}
+my_ctrl <- trainControl(method = "repeatedcv", number = 3, repeats = 3)
+
+my_metric <- "Accuracy"
+
+my_ctrl_b <- trainControl(method = "repeatedcv", number = 3, repeats =
+                             3,
+                             summaryFunction = twoClassSummary,
+                             classProbs = TRUE,
+                             savePredictions = TRUE)
+my_metric_b <-"ROC"
+
+```
+
+
+##   Model and preprocessing
+
+
+###  All categorical and continuous inputs - linear additive features
+
+
+```{r}
+set.seed(4321)
+
+fit_bin_lm_1 <- train(outcome ~ x5+v1+v2+v3+v4+m,
+                  data = df_classify_bin,
+                  method = "glm",
+                  metric = my_metric,
+                  preProcess = c("center", "scale"),
+                  trControl = my_ctrl)
+```
+
+
+###  All pairwise interactions of continuous inputs, include additive categorical features
+
+
+```{r}
+set.seed(4321)
+
+fit_bin_lm_2 <- train( outcome ~ m + (x1+x2+x3+x4+v1+v2+v3+v4+v5)^2,
+                  data = df_classify_bin ,
+                  method = "glm",
+                  metric = my_metric_b,
+                  preProcess = c("center", "scale"),
+                  trControl = my_ctrl_b)
+```
+
+
+###  2 models from iiA:
+
+
+
+```{r}
+set.seed(2021)
+
+fit_bin_lm_3 <- train(outcome ~ ns(z, 2)+ns(w, 2)+ ns(x5,2) + +ns(v1,2)+ns(v3,2)+ns(v4,2),
+                  data = df_classify_bin ,
+                  method = "glm",
+                  metric = my_metric,
+                 
+                  preProcess = c("center", "scale"),
+                  trControl = my_ctrl)
+```
+
+
+
+
+```{r}
+set.seed(2021)
+
+fit_bin_lm_4 <- train(outcome ~ ns(x1, 2)+ns(x2, 2)+ ns(x3,2) + ns(x4,2)+ns(v1,2)+ns(v2,2)+ns(v3,2)+ns(v4,2)+ns(v5,2),
+                  data = df_classify_bin ,
+                  method = "glm",
+                  metric = my_metric_b,
+                 
+                  preProcess = c("center", "scale"),
+                  trControl = my_ctrl_b)
+```
+
+
+###    Regularized Regression with Elastic Net
+
+
+
+```{r}
+fit_bin_enet_1 <- train(outcome ~  (x1+x2+x3+x4+v1+v2+v3+v4+v5) *m,
+                    data = df_classify_bin,
+                    method = "glmnet",
+                    metric = my_metric,
+                    preProcess = c("center", "scale"),
+                    trControl = my_ctrl)
+```
+
+```{r}
+fit_bin_enet_1b <- train(outcome ~  m*((x5+w+t+z)^2),
+                    data = df_classify_bin,
+                    method = "glmnet",
+                    metric = my_metric_b,
+                    preProcess = c("center", "scale"),
+                    trControl = my_ctrl_b)
+```
+
+
+###  Neural network – once with “base feature” set & once with “expanded feature” set
+
+
+```{r}
+
+nnet_grid <- expand.grid(size = c(2, 4, 6, 8, 10, 12),
+                         decay = exp(seq(-6, 2, length.out = 13)))
+
+
+fit_bin_net_1 <- train(outcome ~ x1+x2+x3+x4+v1+v2+v3+v4+v5*m,
+                    data = df_classify_bin,
+                    method = "nnet",
+                    metric = my_metric,
+                    tunegrid=nnet_grid,
+                    preProcess = c("center", "scale"),
+                    trControl = my_ctrl,
+                    trace = FALSE,
+                    linout = 0)
+```
+
+
+```{r}
+plot(fit_bin_net_1, xTrans = log)
+```
+
+```{r}
+fit_bin_net_1b <- train(outcome ~  (x5+w+t+z),
+                    data = df_classify_bin,
+                    method = "nnet",
+                    metric = my_metric_b,
+                    preProcess = c("center", "scale"),
+                    trControl = my_ctrl_b,
+                    trace = FALSE,
+                    linout = 0)
+```
+
+### Random forest – once with “base feature” set & once with “expanded feature” set
+
+
+```{r}
+fit_bin_rf_1 <- train(outcome ~  x1+x2+x3+x4+v1+v2+v3+v4+v5*m,
+                    data = df_classify_bin,
+                    method = "rf",
+                    metric = my_metric,
+                    trControl = my_ctrl,
+                    importance = TRUE)
+```
+
+```{r}
+fit_bin_rf_1b <- train(outcome ~  (x5+w+t+z)*m,
+                    data = df_classify_bin,
+                    method = "rf",
+                    metric = my_metric_b,
+                    trControl = my_ctrl_b,
+                    importance = TRUE)
+```
+
+
+
+### Gradient boosted tree – once with “base feature” set & once with “expanded feature” set 
+
+
+```{r}
+fit_bin_xgb_1 <- train(outcome ~  x1+x2+x3+x4+v1+v2+v3+v4+v5*m,
+                    data = df_classify_bin,
+                    method = "xgbTree",
+                    metric = my_metric,
+                    trControl = my_ctrl,
+                    importance = TRUE)
+```
+
+
+```{r}
+fit_bin_xgb_1b <- train(outcome ~  (x5+w+t+z)*m,
+                    data = df_classify_bin,
+                    method = "xgbTree",
+                    metric = my_metric_b,
+                    trControl = my_ctrl_b,
+                    importance = TRUE)
+```
+
+
+###   SVM  - once with “base feature” set & once with “expanded feature” set 
+
+```{r}
+fit_bin_svm_1 <- train(outcome ~  (x5+v1+v2+v3+v4+v5)*m,
+                    data = df_classify_bin,
+                    method = "svmRadial",
+                    metric = my_metric,
+                    preProcess = c("center", "scale"),
+                    trControl = my_ctrl,
+                    importance = TRUE)
+```
+
+
+```{r}
+fit_bin_svm_1b <- train(outcome ~  (x5+w+t+z+t)*m,
+                    data = df_classify_bin,
+                    method = "svmRadial",
+                    metric = my_metric_b,
+                    preProcess = c("center", "scale"),
+                    trControl = my_ctrl_b,
+                    importance = TRUE)
+```
+
+```{r}
+plot(fit_bin_svm_1b, xTrans = log)
+```
+
+
+###  PLS  - once with “base feature” set & once with “expanded feature” set 
+
+```{r}
+pls_grid <- expand.grid(ncomp = 1:5)
+fit_bin_pls_1 <- train(outcome ~  (x5+v1+v2+v3+v4+v5)*m,
+                    data = df_classify_bin,
+                    method = "pls",
+                    metric = my_metric,
+                    tuneGrid = pls_grid,
+                    preProcess = c("center", "scale"),
+                    trControl = my_ctrl,
+                    importance = TRUE)
+```
+
+
+```{r}
+pls_grid <- expand.grid(ncomp = 1:5)
+fit_bin_pls_1b <- train(outcome ~  (x5+w+t+z)*m,
+                    data = df_classify_bin,
+                    method = "pls",
+                    metric = my_metric_b,
+                    tuneGrid = pls_grid,
+                    preProcess = c("center", "scale"),
+                    trControl = my_ctrl_b,
+                    importance = TRUE)
+```
+
+
+```{r}
+plot(fit_bin_pls_1b, xTrans = log)
+```
+
+
+###  Performance Analysis
+
+
+```{r}
+my_results <- resamples(list(LM_add = fit_bin_lm_1,
+                             
+                             LM_complex = fit_bin_lm_3,
+                             
+                             ENET_complex = fit_bin_enet_1,
+                             NNET = fit_bin_net_1,
+                          
+                             RF1 = fit_bin_rf_1,
+                           
+                             XGB = fit_bin_xgb_1,
+                           
+                             PLS = fit_bin_pls_1,
+                            
+                             SVM = fit_bin_svm_1
+                            ))
+```
+
+
+###  Model Comparison
+
+
+```{r}
+dotplot(my_results, metric = "Accuracy")
+```
+
+```{r}
+my_results_roc <- resamples(list(LM_pairs = fit_bin_lm_2,
+                            
+                             LM_complex2=fit_bin_lm_4,
+                             
+                             ENET_add = fit_bin_enet_1b,
+                             
+                             ENET_complex = fit_bin_enet_1b,
+                             
+                             NNET2 = fit_bin_net_1b,
+                       
+                             RF2 = fit_bin_rf_1b,
+                           
+                        
+                             XGB2 = fit_bin_xgb_1b,
+                            
+                             PLS2 = fit_bin_pls_1b,
+                             
+                             SVM2 = fit_bin_svm_1b
+                             ))
+```
+
+
+###  Model Comparison
+
+
+```{r}
+dotplot(my_results_roc)
+```
+
+
+
+```{r}
+fit_bin_xgb_1b %>% readr::write_rds('cls_best_model.rds')
+```
+
+Which model is the best if you are interested in maximizing Accuracy compared to maximizing the Area Under the ROC Curve (ROC AUC)?
+
+
+XGB is the best model using Accuracy and ROC
+
+Performed the best using Accuracy and the area under the ROC as the metric.
